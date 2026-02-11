@@ -1,0 +1,1816 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AutoCut - 智能气口剪辑</title>
+    <meta name="description" content="AutoCut 智能视频气口剪辑工具，自动检测并去除视频中的气口停顿">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
+        rel="stylesheet">
+    <style>
+        /* ═══════════════════════════════════════════════════════════
+           Design Tokens
+           ═══════════════════════════════════════════════════════════ */
+        :root {
+            --bg-primary: #0a0e1a;
+            --bg-secondary: #111827;
+            --bg-card: rgba(17, 24, 39, 0.7);
+            --bg-glass: rgba(255, 255, 255, 0.04);
+            --bg-glass-hover: rgba(255, 255, 255, 0.08);
+            --border-glass: rgba(255, 255, 255, 0.08);
+            --border-accent: rgba(99, 102, 241, 0.4);
+
+            --text-primary: #f1f5f9;
+            --text-secondary: #94a3b8;
+            --text-muted: #64748b;
+
+            --accent-primary: #6366f1;
+            --accent-secondary: #8b5cf6;
+            --accent-glow: rgba(99, 102, 241, 0.25);
+
+            --success: #10b981;
+            --success-glow: rgba(16, 185, 129, 0.2);
+            --danger: #ef4444;
+            --danger-glow: rgba(239, 68, 68, 0.2);
+            --warning: #f59e0b;
+            --warning-glow: rgba(245, 158, 11, 0.2);
+            --info: #06b6d4;
+
+            --radius-sm: 8px;
+            --radius-md: 12px;
+            --radius-lg: 16px;
+            --radius-xl: 20px;
+
+            --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.3);
+            --shadow-md: 0 4px 24px rgba(0, 0, 0, 0.4);
+            --shadow-lg: 0 8px 40px rgba(0, 0, 0, 0.5);
+            --shadow-glow: 0 0 30px var(--accent-glow);
+
+            --transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        /* ═══════════════════════════════════════════════════════════
+           Reset & Base
+           ═══════════════════════════════════════════════════════════ */
+        *,
+        *::before,
+        *::after {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        html {
+            scroll-behavior: smooth;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            overflow-x: hidden;
+            line-height: 1.6;
+        }
+
+        /* Background animated gradient */
+        body::before {
+            content: '';
+            position: fixed;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: radial-gradient(ellipse at 20% 50%, rgba(99, 102, 241, 0.08) 0%, transparent 50%),
+                radial-gradient(ellipse at 80% 20%, rgba(139, 92, 246, 0.06) 0%, transparent 50%),
+                radial-gradient(ellipse at 50% 80%, rgba(6, 182, 212, 0.05) 0%, transparent 50%);
+            animation: bgShift 20s ease-in-out infinite alternate;
+            z-index: -1;
+            pointer-events: none;
+        }
+
+        @keyframes bgShift {
+            0% {
+                transform: translate(0, 0) rotate(0deg);
+            }
+
+            100% {
+                transform: translate(-5%, 3%) rotate(3deg);
+            }
+        }
+
+        /* ═══════════════════════════════════════════════════════════
+           Layout
+           ═══════════════════════════════════════════════════════════ */
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 24px;
+        }
+
+        /* ═══════════════════════════════════════════════════════════
+           Header
+           ═══════════════════════════════════════════════════════════ */
+        .header {
+            text-align: center;
+            padding: 48px 0 32px;
+        }
+
+        .header-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: var(--bg-glass);
+            border: 1px solid var(--border-glass);
+            border-radius: 20px;
+            padding: 6px 16px;
+            font-size: 12px;
+            color: var(--accent-primary);
+            font-weight: 500;
+            letter-spacing: 0.5px;
+            margin-bottom: 16px;
+            backdrop-filter: blur(10px);
+        }
+
+        .header-badge .dot {
+            width: 6px;
+            height: 6px;
+            background: var(--success);
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+
+            0%,
+            100% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.4;
+            }
+        }
+
+        .header h1 {
+            font-size: 42px;
+            font-weight: 800;
+            background: linear-gradient(135deg, #f1f5f9 0%, #6366f1 50%, #8b5cf6 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 8px;
+            letter-spacing: -1px;
+        }
+
+        .header p {
+            color: var(--text-secondary);
+            font-size: 16px;
+            font-weight: 300;
+        }
+
+        /* ═══════════════════════════════════════════════════════════
+           Glass Card
+           ═══════════════════════════════════════════════════════════ */
+        .card {
+            background: var(--bg-card);
+            backdrop-filter: blur(20px);
+            border: 1px solid var(--border-glass);
+            border-radius: var(--radius-lg);
+            padding: 28px;
+            margin-bottom: 20px;
+            transition: var(--transition);
+        }
+
+        .card:hover {
+            border-color: var(--border-accent);
+            box-shadow: var(--shadow-glow);
+        }
+
+        .card-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .card-title .icon {
+            font-size: 20px;
+        }
+
+        /* ═══════════════════════════════════════════════════════════
+           Upload Zone
+           ═══════════════════════════════════════════════════════════ */
+        .upload-zone {
+            border: 2px dashed var(--border-glass);
+            border-radius: var(--radius-lg);
+            padding: 60px 40px;
+            text-align: center;
+            cursor: pointer;
+            transition: var(--transition);
+            background: var(--bg-glass);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .upload-zone::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: radial-gradient(circle at center, var(--accent-glow) 0%, transparent 70%);
+            opacity: 0;
+            transition: var(--transition);
+        }
+
+        .upload-zone:hover,
+        .upload-zone.drag-over {
+            border-color: var(--accent-primary);
+            background: var(--bg-glass-hover);
+        }
+
+        .upload-zone:hover::before,
+        .upload-zone.drag-over::before {
+            opacity: 1;
+        }
+
+        .upload-icon {
+            font-size: 56px;
+            margin-bottom: 16px;
+            display: block;
+            filter: grayscale(0.3);
+            transition: var(--transition);
+        }
+
+        .upload-zone:hover .upload-icon {
+            filter: grayscale(0);
+            transform: scale(1.05);
+        }
+
+        .upload-text {
+            font-size: 18px;
+            font-weight: 500;
+            color: var(--text-primary);
+            margin-bottom: 6px;
+        }
+
+        .upload-hint {
+            font-size: 13px;
+            color: var(--text-muted);
+        }
+
+        .upload-zone.has-file {
+            border-color: var(--success);
+            border-style: solid;
+        }
+
+        .file-info {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            padding: 10px 0;
+        }
+
+        .file-info .name {
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .file-info .size {
+            font-size: 13px;
+            color: var(--text-secondary);
+            background: var(--bg-glass);
+            padding: 3px 10px;
+            border-radius: 12px;
+        }
+
+        /* ═══════════════════════════════════════════════════════════
+           Controls
+           ═══════════════════════════════════════════════════════════ */
+        .controls-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+        }
+
+        .control-group label {
+            display: block;
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--text-secondary);
+            margin-bottom: 8px;
+        }
+
+        .control-group input[type="range"] {
+            width: 100%;
+            -webkit-appearance: none;
+            appearance: none;
+            height: 6px;
+            background: linear-gradient(to right, var(--accent-primary), var(--accent-secondary));
+            border-radius: 3px;
+            outline: none;
+            margin-bottom: 6px;
+        }
+
+        .control-group input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 18px;
+            height: 18px;
+            background: var(--text-primary);
+            border-radius: 50%;
+            cursor: pointer;
+            box-shadow: 0 0 10px var(--accent-glow);
+            transition: var(--transition);
+        }
+
+        .control-group input[type="range"]::-webkit-slider-thumb:hover {
+            transform: scale(1.2);
+            box-shadow: 0 0 20px var(--accent-glow);
+        }
+
+        .control-value {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--accent-primary);
+            text-align: right;
+        }
+
+        /* ═══════════════════════════════════════════════════════════
+           Buttons
+           ═══════════════════════════════════════════════════════════ */
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 12px 28px;
+            border: none;
+            border-radius: var(--radius-md);
+            font-family: inherit;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: var(--transition);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .btn::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.1), transparent);
+            opacity: 0;
+            transition: var(--transition);
+        }
+
+        .btn:hover::before {
+            opacity: 1;
+        }
+
+        .btn:active {
+            transform: scale(0.97);
+        }
+
+        .btn:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+            color: white;
+            box-shadow: 0 4px 16px var(--accent-glow);
+        }
+
+        .btn-primary:hover:not(:disabled) {
+            box-shadow: 0 6px 24px var(--accent-glow);
+            transform: translateY(-1px);
+        }
+
+        .btn-success {
+            background: linear-gradient(135deg, var(--success), #059669);
+            color: white;
+            box-shadow: 0 4px 16px var(--success-glow);
+        }
+
+        .btn-success:hover:not(:disabled) {
+            box-shadow: 0 6px 24px var(--success-glow);
+            transform: translateY(-1px);
+        }
+
+        .btn-outline {
+            background: transparent;
+            border: 1px solid var(--border-glass);
+            color: var(--text-secondary);
+        }
+
+        .btn-outline:hover:not(:disabled) {
+            border-color: var(--accent-primary);
+            color: var(--accent-primary);
+        }
+
+        .btn-group {
+            display: flex;
+            gap: 12px;
+            justify-content: center;
+            flex-wrap: wrap;
+            margin-top: 24px;
+        }
+
+        /* ═══════════════════════════════════════════════════════════
+           Stats Bar
+           ═══════════════════════════════════════════════════════════ */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 16px;
+        }
+
+        .stat-item {
+            background: var(--bg-glass);
+            border: 1px solid var(--border-glass);
+            border-radius: var(--radius-md);
+            padding: 18px;
+            text-align: center;
+            transition: var(--transition);
+        }
+
+        .stat-item:hover {
+            border-color: var(--border-accent);
+            transform: translateY(-2px);
+        }
+
+        .stat-value {
+            font-size: 24px;
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--text-primary), var(--accent-primary));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .stat-label {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-top: 4px;
+            font-weight: 500;
+        }
+
+        /* ═══════════════════════════════════════════════════════════
+           Timeline Canvas
+           ═══════════════════════════════════════════════════════════ */
+        .timeline-container {
+            background: var(--bg-secondary);
+            border-radius: var(--radius-md);
+            overflow: hidden;
+            border: 1px solid var(--border-glass);
+        }
+
+        .timeline-panel {
+            position: relative;
+            border-bottom: 1px solid var(--border-glass);
+        }
+
+        .timeline-panel:last-child {
+            border-bottom: none;
+        }
+
+        .timeline-panel canvas {
+            display: block;
+            width: 100%;
+            cursor: crosshair;
+        }
+
+        .timeline-label {
+            position: absolute;
+            top: 8px;
+            left: 12px;
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--text-muted);
+            background: rgba(0, 0, 0, 0.5);
+            padding: 3px 10px;
+            border-radius: 6px;
+            backdrop-filter: blur(8px);
+            z-index: 2;
+            pointer-events: none;
+        }
+
+        /* ═══════════════════════════════════════════════════════════
+           Detail Tables
+           ═══════════════════════════════════════════════════════════ */
+        .detail-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
+        @media (max-width: 768px) {
+            .detail-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .detail-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+
+        .detail-table th {
+            text-align: left;
+            padding: 10px 14px;
+            font-weight: 600;
+            color: var(--text-muted);
+            border-bottom: 1px solid var(--border-glass);
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .detail-table td {
+            padding: 9px 14px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+            color: var(--text-secondary);
+            font-variant-numeric: tabular-nums;
+        }
+
+        .detail-table tr:hover td {
+            background: var(--bg-glass);
+            color: var(--text-primary);
+        }
+
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 2px 8px;
+            border-radius: 6px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+
+        .badge-danger {
+            background: var(--danger-glow);
+            color: var(--danger);
+        }
+
+        .badge-success {
+            background: var(--success-glow);
+            color: var(--success);
+        }
+
+        .badge-toggle {
+            cursor: pointer;
+            user-select: none;
+            transition: var(--transition);
+            padding: 4px 12px;
+            font-size: 11px;
+        }
+
+        .badge-toggle:hover {
+            transform: scale(1.08);
+            filter: brightness(1.3);
+        }
+
+        .badge-toggle:active {
+            transform: scale(0.95);
+        }
+
+        .silence-row-disabled {
+            opacity: 0.45;
+        }
+
+        .silence-row-disabled td {
+            text-decoration: line-through;
+            text-decoration-color: rgba(255, 255, 255, 0.2);
+        }
+
+        .silence-row-disabled td:last-child {
+            text-decoration: none;
+        }
+
+        .bulk-toggle-bar {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 10px;
+            align-items: center;
+        }
+
+        .bulk-toggle-bar .btn-sm {
+            padding: 4px 12px;
+            font-size: 11px;
+            border-radius: 6px;
+            border: 1px solid var(--border-glass);
+            background: var(--bg-glass);
+            color: var(--text-secondary);
+            cursor: pointer;
+            transition: var(--transition);
+        }
+
+        .bulk-toggle-bar .btn-sm:hover {
+            background: rgba(255, 255, 255, 0.1);
+            color: var(--text-primary);
+        }
+
+        .bulk-toggle-bar .hint {
+            font-size: 11px;
+            color: var(--text-muted);
+            margin-left: auto;
+        }
+
+        /* ═══════════════════════════════════════════════════════════
+           Progress / Loading
+           ═══════════════════════════════════════════════════════════ */
+        .progress-bar-container {
+            background: var(--bg-glass);
+            border-radius: 8px;
+            height: 8px;
+            overflow: hidden;
+            margin: 16px 0;
+        }
+
+        .progress-bar {
+            height: 100%;
+            background: linear-gradient(90deg, var(--accent-primary), var(--accent-secondary));
+            border-radius: 8px;
+            width: 0%;
+            transition: width 0.5s ease;
+        }
+
+        .spinner {
+            width: 20px;
+            height: 20px;
+            border: 2px solid var(--border-glass);
+            border-top-color: var(--accent-primary);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            display: inline-block;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        .status-text {
+            font-size: 14px;
+            color: var(--text-secondary);
+            text-align: center;
+            padding: 12px;
+        }
+
+        /* ═══════════════════════════════════════════════════════════
+           Tooltip (on hover over timeline)
+           ═══════════════════════════════════════════════════════════ */
+        .tooltip {
+            position: fixed;
+            background: rgba(0, 0, 0, 0.85);
+            backdrop-filter: blur(12px);
+            color: var(--text-primary);
+            font-size: 12px;
+            padding: 8px 14px;
+            border-radius: 8px;
+            pointer-events: none;
+            z-index: 1000;
+            white-space: nowrap;
+            border: 1px solid var(--border-glass);
+            box-shadow: var(--shadow-md);
+            display: none;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .tooltip .silence-hint {
+            display: inline-block;
+            margin-left: 6px;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 10px;
+            font-weight: 600;
+        }
+
+        .tooltip .silence-hint.cut {
+            background: rgba(239, 68, 68, 0.2);
+            color: #ef4444;
+        }
+
+        .tooltip .silence-hint.keep {
+            background: rgba(16, 185, 129, 0.2);
+            color: #10b981;
+        }
+
+        /* ═══════════════════════════════════════════════════════════
+           Player
+           ═══════════════════════════════════════════════════════════ */
+        .player-card {
+            position: relative;
+        }
+
+        .player-wrapper {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            padding: 14px 0;
+        }
+
+        .player-btn {
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            border: none;
+            background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+            color: white;
+            font-size: 20px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            transition: var(--transition);
+            box-shadow: 0 4px 16px var(--accent-glow);
+        }
+
+        .player-btn:hover {
+            transform: scale(1.08);
+            box-shadow: 0 6px 24px var(--accent-glow);
+        }
+
+        .player-btn:active {
+            transform: scale(0.95);
+        }
+
+        .player-seekbar {
+            flex: 1;
+            height: 6px;
+            -webkit-appearance: none;
+            appearance: none;
+            background: var(--bg-glass);
+            border-radius: 3px;
+            outline: none;
+            cursor: pointer;
+        }
+
+        .player-seekbar::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 14px;
+            height: 14px;
+            background: var(--accent-primary);
+            border-radius: 50%;
+            cursor: pointer;
+            box-shadow: 0 0 8px var(--accent-glow);
+        }
+
+        .player-time {
+            font-size: 13px;
+            font-variant-numeric: tabular-nums;
+            color: var(--text-secondary);
+            min-width: 110px;
+            text-align: right;
+            flex-shrink: 0;
+        }
+
+        .player-time .current {
+            color: var(--accent-primary);
+            font-weight: 600;
+        }
+
+        .playhead-line {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            width: 2px;
+            background: #fff;
+            pointer-events: none;
+            z-index: 10;
+            box-shadow: 0 0 6px rgba(255, 255, 255, 0.5);
+            display: none;
+        }
+
+        .playhead-line::after {
+            content: '';
+            position: absolute;
+            top: -4px;
+            left: -4px;
+            width: 10px;
+            height: 10px;
+            background: #fff;
+            border-radius: 50%;
+            box-shadow: 0 0 8px rgba(255, 255, 255, 0.6);
+        }
+
+        video.player-video {
+            width: 100%;
+            max-height: 360px;
+            border-radius: var(--radius-md);
+            background: #000;
+            margin-bottom: 8px;
+        }
+
+        /* ═══════════════════════════════════════════════════════════
+           Sections visibility
+           ═══════════════════════════════════════════════════════════ */
+        .section {
+            display: none;
+        }
+
+        .section.active {
+            display: block;
+            animation: fadeIn 0.5s ease;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(12px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        /* ═══════════════════════════════════════════════════════════
+           Footer
+           ═══════════════════════════════════════════════════════════ */
+        .footer {
+            text-align: center;
+            padding: 40px 0 24px;
+            color: var(--text-muted);
+            font-size: 12px;
+        }
+
+        /* Responsive */
+        @media (max-width: 640px) {
+            .container {
+                padding: 16px;
+            }
+
+            .header h1 {
+                font-size: 28px;
+            }
+
+            .card {
+                padding: 20px;
+            }
+
+            .upload-zone {
+                padding: 40px 20px;
+            }
+
+            .controls-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .stats-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="tooltip" id="tooltip"></div>
+
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-badge"><span class="dot"></span> AI-Powered</div>
+            <h1>✂️ AutoCut</h1>
+            <p>智能检测音视频气口 · 一键精准剪辑</p>
+        </header>
+
+        <!-- Step 1: Upload -->
+        <section id="sec-upload" class="section active">
+            <div class="card">
+                <div class="card-title"><span class="icon">📁</span> 上传音频 / 视频</div>
+                <div class="upload-zone" id="upload-zone">
+                    <span class="upload-icon">🎬</span>
+                    <div class="upload-text">拖拽音频或视频文件到此处 或 点击选择</div>
+                    <div class="upload-hint">支持 MP3 / WAV / FLAC / AAC / M4A / MP4 / MOV / MKV / AVI / WebM</div>
+                </div>
+                <input type="file" id="file-input" accept="audio/*,video/*" hidden>
+
+                <div id="upload-progress" style="display:none;">
+                    <div class="progress-bar-container">
+                        <div class="progress-bar" id="upload-bar"></div>
+                    </div>
+                    <div class="status-text" id="upload-status">上传中...</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Step 2: Settings + Analyze -->
+        <section id="sec-settings" class="section">
+            <div class="card">
+                <div class="card-title"><span class="icon">⚙️</span> 剪辑参数</div>
+                <div class="controls-grid">
+                    <div class="control-group">
+                        <label>静音阈值</label>
+                        <input type="range" id="ctrl-threshold" min="-60" max="-10" value="-35" step="1">
+                        <div class="control-value" id="val-threshold">-35 dB</div>
+                    </div>
+                    <div class="control-group">
+                        <label>最小气口时长</label>
+                        <input type="range" id="ctrl-mingap" min="0.05" max="2" value="0.1" step="0.05">
+                        <div class="control-value" id="val-mingap">0.10 秒</div>
+                    </div>
+                    <div class="control-group">
+                        <label>合并间隔</label>
+                        <input type="range" id="ctrl-merge" min="0.1" max="2" value="0.3" step="0.05">
+                        <div class="control-value" id="val-merge">0.30 秒</div>
+                    </div>
+                    <div class="control-group">
+                        <label>边界保留</label>
+                        <input type="range" id="ctrl-padding" min="0" max="0.5" value="0.08" step="0.01">
+                        <div class="control-value" id="val-padding">0.08 秒</div>
+                    </div>
+                </div>
+                <div class="btn-group">
+                    <button class="btn btn-outline" onclick="resetUpload()">↩ 重新上传</button>
+                    <button class="btn btn-primary" id="btn-analyze" onclick="analyzeVideo()">
+                        🔍 开始智能分析
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <!-- Step 3: Preview Timeline -->
+        <section id="sec-preview" class="section">
+            <!-- Stats -->
+            <div class="card">
+                <div class="card-title"><span class="icon">📊</span> 分析总览</div>
+                <div class="stats-grid" id="stats-grid"></div>
+            </div>
+
+            <!-- Player -->
+            <div class="card player-card">
+                <div class="card-title"><span class="icon">▶️</span> 播放预览</div>
+                <div id="player-video-area" style="display:none;">
+                    <video id="player-video" class="player-video" preload="auto"></video>
+                </div>
+                <audio id="player-audio" preload="auto" style="display:none;"></audio>
+                <div class="player-wrapper">
+                    <button class="player-btn" id="player-play-btn" onclick="togglePlay()" title="播放/暂停">▶</button>
+                    <input type="range" class="player-seekbar" id="player-seekbar" min="0" max="100" value="0"
+                        step="0.1">
+                    <div class="player-time">
+                        <span class="current" id="player-cur">00:00.00</span> / <span id="player-dur">00:00.00</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Timeline Canvas -->
+            <div class="card">
+                <div class="card-title"><span class="icon">📐</span> 剪辑预览时间轴</div>
+                <div class="timeline-container" id="timeline-container">
+                    <div class="timeline-panel">
+                        <span class="timeline-label">🎵 音频波形 & 气口检测</span>
+                        <canvas id="cv-waveform" height="160"></canvas>
+                        <div class="playhead-line" id="ph-waveform"></div>
+                    </div>
+                    <div class="timeline-panel">
+                        <span class="timeline-label">🔊 音频增益 (dB)</span>
+                        <canvas id="cv-gain" height="120"></canvas>
+                        <div class="playhead-line" id="ph-gain"></div>
+                    </div>
+                    <div class="timeline-panel">
+                        <span class="timeline-label">🎬 片段总览</span>
+                        <canvas id="cv-segments" height="56"></canvas>
+                        <div class="playhead-line" id="ph-segments"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Detail Tables -->
+            <div class="card">
+                <div class="card-title"><span class="icon">📋</span> 剪辑明细</div>
+                <div class="detail-grid">
+                    <div>
+                        <h4 style="font-size:13px;color:var(--text-muted);margin-bottom:10px;">✂️ 气口列表</h4>
+                        <div class="bulk-toggle-bar">
+                            <button class="btn-sm" onclick="toggleAllSilences(true)">全部剪除</button>
+                            <button class="btn-sm" onclick="toggleAllSilences(false)">全部保留</button>
+                            <span class="hint">点击状态可切换</span>
+                        </div>
+                        <div
+                            style="max-height:320px;overflow-y:auto;border-radius:8px;border:1px solid var(--border-glass);">
+                            <table class="detail-table" id="tbl-silence"></table>
+                        </div>
+                    </div>
+                    <div>
+                        <h4 style="font-size:13px;color:var(--text-muted);margin-bottom:10px;">🎞️ 保留片段</h4>
+                        <div
+                            style="max-height:320px;overflow-y:auto;border-radius:8px;border:1px solid var(--border-glass);">
+                            <table class="detail-table" id="tbl-segments"></table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Actions -->
+            <div class="card" style="text-align:center;">
+                <div class="btn-group" style="margin-top:0;">
+                    <button class="btn btn-outline" onclick="showSection('sec-settings')">⚙️ 调整参数</button>
+                    <button class="btn btn-success" id="btn-export" onclick="exportVideo()">
+                        📦 导出剪辑视频
+                    </button>
+                </div>
+                <div id="export-progress" style="display:none; margin-top:16px;">
+                    <div class="progress-bar-container">
+                        <div class="progress-bar" id="export-bar"></div>
+                    </div>
+                    <div class="status-text" id="export-status">导出中...</div>
+                </div>
+                <div id="download-area" style="display:none; margin-top:16px;">
+                    <a id="download-link" class="btn btn-success" style="text-decoration:none;">
+                        ⬇️ 下载剪辑后视频
+                    </a>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <footer class="footer">
+        AutoCut · 智能视频气口剪辑 · Built with ❤️
+    </footer>
+
+    <!-- ═══════════════════════════════════════════════════════════
+     JavaScript
+     ═══════════════════════════════════════════════════════════ -->
+    <script>
+        // ── State ──
+        let uploadedFile = null;  // {file_id, save_name, filename, size_mb}
+        let analysisData = null;  // server response from /api/analyze
+        let mediaEl = null;       // reference to <audio> or <video> element
+        let playheadRAF = null;   // requestAnimationFrame id
+        let isPlayingCut = false; // are we in cut-playback mode
+        let cutPlayTimer = null;  // timeout handle for segment scheduling
+        let silenceEnabled = [];  // per-silence toggle: true = cut, false = keep
+        let effectiveSegments = [];  // segments after user toggles
+        let effectiveSilences = [];  // silences after user toggles
+
+        // ── DOM refs ──
+        const $ = id => document.getElementById(id);
+        const uploadZone = $('upload-zone');
+        const fileInput = $('file-input');
+
+        // ── Sections ──
+        function showSection(id) {
+            document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+            $(id).classList.add('active');
+        }
+
+        // ── Slider labels ──
+        ['threshold', 'mingap', 'merge', 'padding'].forEach(k => {
+            const el = $('ctrl-' + k);
+            el.addEventListener('input', () => {
+                if (k === 'threshold') $('val-threshold').textContent = el.value + ' dB';
+                else if (k === 'mingap') $('val-mingap').textContent = parseFloat(el.value).toFixed(2) + ' 秒';
+                else if (k === 'merge') $('val-merge').textContent = parseFloat(el.value).toFixed(2) + ' 秒';
+                else if (k === 'padding') $('val-padding').textContent = parseFloat(el.value).toFixed(2) + ' 秒';
+            });
+        });
+
+        // ── Upload Zone events ──
+        uploadZone.addEventListener('click', () => fileInput.click());
+        uploadZone.addEventListener('dragover', e => { e.preventDefault(); uploadZone.classList.add('drag-over'); });
+        uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('drag-over'));
+        uploadZone.addEventListener('drop', e => {
+            e.preventDefault();
+            uploadZone.classList.remove('drag-over');
+            if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+        });
+        fileInput.addEventListener('change', () => { if (fileInput.files.length) handleFile(fileInput.files[0]); });
+
+        // ── Upload ──
+        async function handleFile(file) {
+            $('upload-progress').style.display = 'block';
+            $('upload-status').textContent = '上传中...';
+            $('upload-bar').style.width = '30%';
+
+            const fd = new FormData();
+            fd.append('file', file);
+
+            try {
+                const res = await fetch('/api/upload', { method: 'POST', body: fd });
+                if (!res.ok) { const e = await res.json(); throw new Error(e.detail || '上传失败'); }
+                uploadedFile = await res.json();
+
+                $('upload-bar').style.width = '100%';
+                $('upload-status').innerHTML = `✅ <strong>${uploadedFile.filename}</strong> (${uploadedFile.size_mb} MB) 上传成功`;
+
+                // Show file info in upload zone
+                uploadZone.classList.add('has-file');
+                uploadZone.innerHTML = `
+            <span class="upload-icon">✅</span>
+            <div class="file-info">
+                <span class="name">${uploadedFile.filename}</span>
+                <span class="size">${uploadedFile.size_mb} MB</span>
+            </div>`;
+
+                setTimeout(() => showSection('sec-settings'), 600);
+            } catch (err) {
+                $('upload-bar').style.width = '0%';
+                $('upload-status').textContent = '❌ ' + err.message;
+            }
+        }
+
+        function resetUpload() {
+            uploadedFile = null;
+            analysisData = null;
+            uploadZone.classList.remove('has-file');
+            uploadZone.innerHTML = `
+        <span class="upload-icon">🎬</span>
+        <div class="upload-text">拖拽音频或视频文件到此处 或 点击选择</div>
+        <div class="upload-hint">支持 MP3 / WAV / FLAC / AAC / M4A / MP4 / MOV / MKV / AVI / WebM</div>`;
+            $('upload-progress').style.display = 'none';
+            $('download-area').style.display = 'none';
+            $('export-progress').style.display = 'none';
+            showSection('sec-upload');
+        }
+
+        // ── Analyze ──
+        async function analyzeVideo() {
+            if (!uploadedFile) return;
+            const btn = $('btn-analyze');
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner"></span> 分析中...';
+
+            const fd = new FormData();
+            fd.append('save_name', uploadedFile.save_name);
+            fd.append('threshold', $('ctrl-threshold').value);
+            fd.append('min_gap', $('ctrl-mingap').value);
+            fd.append('merge_gap', $('ctrl-merge').value);
+            fd.append('padding', $('ctrl-padding').value);
+
+            try {
+                const res = await fetch('/api/analyze', { method: 'POST', body: fd });
+                if (!res.ok) { const e = await res.json(); throw new Error(e.detail || '分析失败'); }
+                analysisData = await res.json();
+
+                // Initialize silence toggles (all enabled = all will be cut)
+                timelineInitialized = false;
+                silenceEnabled = analysisData.silence_regions.map(() => true);
+                recalculateFromToggles();
+
+                showSection('sec-preview');
+                // Delay rendering so the section is visible and has layout
+                await new Promise(r => setTimeout(r, 80));
+                renderStats();
+                renderTimeline();
+                renderTables();
+            } catch (err) {
+                alert('分析失败: ' + err.message);
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '🔍 开始智能分析';
+            }
+        }
+
+        // ── Recalculate segments from user toggles ──
+        function recalculateFromToggles() {
+            const d = analysisData;
+            const padding = parseFloat($('ctrl-padding').value) || 0;
+
+            // Build effective silence list from enabled toggles
+            effectiveSilences = d.silence_regions.filter((_, i) => silenceEnabled[i]);
+
+            // Apply padding
+            const padded = [];
+            for (const [start, end] of effectiveSilences) {
+                const ps = start + padding;
+                const pe = end - padding;
+                if (pe > ps) padded.push([ps, pe]);
+            }
+
+            // Build segments
+            effectiveSegments = [];
+            let prev = 0;
+            for (const [start, end] of padded) {
+                if (start - prev > 0.05) {
+                    effectiveSegments.push([round3(prev), round3(start)]);
+                }
+                prev = end;
+            }
+            if (d.duration - prev > 0.05) {
+                effectiveSegments.push([round3(prev), round3(d.duration)]);
+            }
+        }
+
+        function round3(n) { return Math.round(n * 1000) / 1000; }
+
+        // ── Toggle a single silence region ──
+        function toggleSilence(index) {
+            silenceEnabled[index] = !silenceEnabled[index];
+            recalculateFromToggles();
+            renderStats();
+            renderTimeline();
+            renderTables();
+        }
+
+        // ── Bulk toggle ──
+        function toggleAllSilences(enable) {
+            silenceEnabled = silenceEnabled.map(() => enable);
+            recalculateFromToggles();
+            renderStats();
+            renderTimeline();
+            renderTables();
+        }
+
+        // ── Render Stats ──
+        function renderStats() {
+            const d = analysisData;
+            const totalSilence = effectiveSilences.reduce((sum, r) => sum + (r[1] - r[0]), 0);
+            const cutDuration = d.duration - totalSilence;
+            const ratio = d.duration > 0 ? (totalSilence / d.duration * 100) : 0;
+            const enabledCount = silenceEnabled.filter(Boolean).length;
+            $('stats-grid').innerHTML = `
+        <div class="stat-item"><div class="stat-value">${fmtTime(d.duration)}</div><div class="stat-label">原始时长</div></div>
+        <div class="stat-item"><div class="stat-value">${enabledCount} / ${d.silence_count}</div><div class="stat-label">剪除气口</div></div>
+        <div class="stat-item"><div class="stat-value">${totalSilence.toFixed(1)}s</div><div class="stat-label">气口总长</div></div>
+        <div class="stat-item"><div class="stat-value">${fmtTime(cutDuration)}</div><div class="stat-label">剪辑后时长</div></div>
+        <div class="stat-item"><div class="stat-value">${ratio.toFixed(1)}%</div><div class="stat-label">节省比例</div></div>
+    `;
+        }
+
+        // ── Render Tables ──
+        function renderTables() {
+            const d = analysisData;
+            // Silence table with toggle buttons
+            let html = `<thead><tr><th>#</th><th>开始</th><th>结束</th><th>时长</th><th>操作</th></tr></thead><tbody>`;
+            d.silence_regions.forEach((r, i) => {
+                const enabled = silenceEnabled[i];
+                const rowClass = enabled ? '' : 'silence-row-disabled';
+                const badge = enabled
+                    ? `<span class="badge badge-danger badge-toggle" onclick="toggleSilence(${i})">✘ 剪除</span>`
+                    : `<span class="badge badge-success badge-toggle" onclick="toggleSilence(${i})">✔ 保留</span>`;
+                html += `<tr class="${rowClass}"><td>${i + 1}</td><td>${fmtTime(r[0])}</td><td>${fmtTime(r[1])}</td>
+                 <td>${(r[1] - r[0]).toFixed(2)}s</td>
+                 <td>${badge}</td></tr>`;
+            });
+            html += '</tbody>';
+            $('tbl-silence').innerHTML = html;
+
+            // Segments table (uses effective segments)
+            let html2 = `<thead><tr><th>#</th><th>原始起止</th><th>时长</th><th>新起始</th></tr></thead><tbody>`;
+            let newStart = 0;
+            effectiveSegments.forEach((s, i) => {
+                const dur = s[1] - s[0];
+                html2 += `<tr><td>${i + 1}</td><td>${fmtTime(s[0])} → ${fmtTime(s[1])}</td>
+                  <td>${dur.toFixed(2)}s</td>
+                  <td><span class="badge badge-success">${fmtTime(newStart)}</span></td></tr>`;
+                newStart += dur;
+            });
+            html2 += '</tbody>';
+            $('tbl-segments').innerHTML = html2;
+        }
+
+        // ── Render Timeline (Canvas) ──
+        let timelineInitialized = false;
+
+        function renderTimeline() {
+            const d = analysisData;
+            drawWaveform(d);
+            drawGain(d);
+            drawSegments(d);
+            if (!timelineInitialized) {
+                setupTooltip(d);
+                setupPlayer(d);
+                timelineInitialized = true;
+            } else {
+                // Player seekbar/duration needs update when segments change
+                updatePlayerDuration();
+            }
+        }
+
+        function updatePlayerDuration() {
+            const cutDur = effectiveSegments.reduce((sum, s) => sum + (s[1] - s[0]), 0);
+            const seekbar = $('player-seekbar');
+            const durEl = $('player-dur');
+            seekbar.max = cutDur;
+            durEl.textContent = fmtTime(cutDur);
+        }
+
+        function setupCanvas(canvas, h) {
+            const rect = canvas.parentElement.getBoundingClientRect();
+            const dpr = window.devicePixelRatio || 1;
+            const w = rect.width;
+            canvas.width = w * dpr;
+            canvas.height = h * dpr;
+            canvas.style.height = h + 'px';
+            const ctx = canvas.getContext('2d');
+            ctx.scale(dpr, dpr);
+            return { ctx, w, h };
+        }
+
+        function drawWaveform(d) {
+            const cv = $('cv-waveform');
+            const { ctx, w, h } = setupCanvas(cv, 160);
+
+            // Background
+            ctx.fillStyle = '#0d1117';
+            ctx.fillRect(0, 0, w, h);
+
+            // Silence regions (distinguish enabled vs disabled)
+            d.silence_regions.forEach((r, i) => {
+                const x1 = (r[0] / d.duration) * w;
+                const x2 = (r[1] / d.duration) * w;
+                if (silenceEnabled[i]) {
+                    ctx.fillStyle = 'rgba(239, 68, 68, 0.18)';
+                    ctx.fillRect(x1, 0, x2 - x1, h);
+                } else {
+                    // Disabled: dashed outline only
+                    ctx.setLineDash([4, 3]);
+                    ctx.strokeStyle = 'rgba(239, 68, 68, 0.25)';
+                    ctx.lineWidth = 1;
+                    ctx.strokeRect(x1, 1, x2 - x1, h - 2);
+                    ctx.setLineDash([]);
+                }
+            });
+
+            // Waveform
+            if (d.waveform && d.waveform.samples.length) {
+                const samples = d.waveform.samples;
+                const times = d.waveform.times;
+                const mid = h / 2;
+
+                ctx.beginPath();
+                ctx.strokeStyle = '#00d4aa';
+                ctx.lineWidth = 0.8;
+                ctx.globalAlpha = 0.85;
+
+                for (let i = 0; i < samples.length; i++) {
+                    const x = (times[i] / d.duration) * w;
+                    const y = mid - samples[i] * mid * 0.9;
+                    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+                }
+                ctx.stroke();
+                ctx.globalAlpha = 1;
+            }
+
+            // Time axis
+            drawTimeAxis(ctx, w, h, d.duration);
+        }
+
+        function drawGain(d) {
+            const cv = $('cv-gain');
+            const { ctx, w, h } = setupCanvas(cv, 120);
+
+            ctx.fillStyle = '#0d1117';
+            ctx.fillRect(0, 0, w, h);
+
+            if (!d.gain_data || !d.gain_data.length) return;
+
+            const threshold = parseFloat($('ctrl-threshold').value);
+            const minDb = -60, maxDb = 0;
+            const mapY = db => h - ((db - minDb) / (maxDb - minDb)) * h;
+
+            // Silence regions (distinguish enabled vs disabled)
+            d.silence_regions.forEach((r, i) => {
+                const x1 = (r[0] / d.duration) * w;
+                const x2 = (r[1] / d.duration) * w;
+                if (silenceEnabled[i]) {
+                    ctx.fillStyle = 'rgba(239, 68, 68, 0.12)';
+                    ctx.fillRect(x1, 0, x2 - x1, h);
+                } else {
+                    ctx.setLineDash([4, 3]);
+                    ctx.strokeStyle = 'rgba(239, 68, 68, 0.15)';
+                    ctx.lineWidth = 1;
+                    ctx.strokeRect(x1, 1, x2 - x1, h - 2);
+                    ctx.setLineDash([]);
+                }
+            });
+
+            // Fill under RMS curve
+            ctx.beginPath();
+            ctx.moveTo(0, h);
+            d.gain_data.forEach(g => {
+                const x = (g.time / d.duration) * w;
+                const y = mapY(g.rms_db);
+                ctx.lineTo(x, y);
+            });
+            ctx.lineTo(w, h);
+            ctx.closePath();
+            const grad = ctx.createLinearGradient(0, 0, 0, h);
+            grad.addColorStop(0, 'rgba(255,165,2,0.35)');
+            grad.addColorStop(1, 'rgba(255,165,2,0.02)');
+            ctx.fillStyle = grad;
+            ctx.fill();
+
+            // RMS line
+            ctx.beginPath();
+            ctx.strokeStyle = '#ffa502';
+            ctx.lineWidth = 1.2;
+            d.gain_data.forEach((g, i) => {
+                const x = (g.time / d.duration) * w;
+                const y = mapY(g.rms_db);
+                i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+            });
+            ctx.stroke();
+
+            // Peak line (subtle)
+            ctx.beginPath();
+            ctx.strokeStyle = 'rgba(255,99,72,0.35)';
+            ctx.lineWidth = 0.6;
+            d.gain_data.forEach((g, i) => {
+                const x = (g.time / d.duration) * w;
+                const y = mapY(g.peak_db);
+                i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+            });
+            ctx.stroke();
+
+            // Threshold line
+            const ty = mapY(threshold);
+            ctx.setLineDash([6, 4]);
+            ctx.strokeStyle = '#ff6b81';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(0, ty);
+            ctx.lineTo(w, ty);
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            // Label
+            ctx.font = '10px Inter, sans-serif';
+            ctx.fillStyle = '#ff6b81';
+            ctx.fillText(`${threshold} dB`, w - 48, ty - 4);
+
+            // dB scale
+            ctx.fillStyle = '#64748b';
+            ctx.font = '9px Inter, sans-serif';
+            [-60, -40, -20, 0].forEach(db => {
+                const y = mapY(db);
+                ctx.fillText(`${db}`, 4, y - 2);
+                ctx.strokeStyle = 'rgba(255,255,255,0.04)';
+                ctx.lineWidth = 0.5;
+                ctx.beginPath(); ctx.moveTo(30, y); ctx.lineTo(w, y); ctx.stroke();
+            });
+
+            drawTimeAxis(ctx, w, h, d.duration);
+        }
+
+        function drawSegments(d) {
+            const cv = $('cv-segments');
+            const { ctx, w, h } = setupCanvas(cv, 56);
+
+            ctx.fillStyle = '#0d1117';
+            ctx.fillRect(0, 0, w, h);
+
+            const barY = 12, barH = 28;
+
+            // Background (removed)
+            ctx.fillStyle = 'rgba(239, 68, 68, 0.15)';
+            ctx.fillRect(0, barY, w, barH);
+
+            // Segments (kept) - use effectiveSegments
+            effectiveSegments.forEach(s => {
+                const x1 = (s[0] / d.duration) * w;
+                const x2 = (s[1] / d.duration) * w;
+                const grad = ctx.createLinearGradient(x1, 0, x2, 0);
+                grad.addColorStop(0, 'rgba(46, 213, 115, 0.7)');
+                grad.addColorStop(1, 'rgba(16, 185, 129, 0.7)');
+                ctx.fillStyle = grad;
+
+                // Rounded rect
+                const r = 3;
+                ctx.beginPath();
+                ctx.moveTo(x1 + r, barY);
+                ctx.lineTo(x2 - r, barY);
+                ctx.quadraticCurveTo(x2, barY, x2, barY + r);
+                ctx.lineTo(x2, barY + barH - r);
+                ctx.quadraticCurveTo(x2, barY + barH, x2 - r, barY + barH);
+                ctx.lineTo(x1 + r, barY + barH);
+                ctx.quadraticCurveTo(x1, barY + barH, x1, barY + barH - r);
+                ctx.lineTo(x1, barY + r);
+                ctx.quadraticCurveTo(x1, barY, x1 + r, barY);
+                ctx.fill();
+
+                // Label
+                const dur = s[1] - s[0];
+                if (x2 - x1 > 30) {
+                    ctx.font = '9px Inter, sans-serif';
+                    ctx.fillStyle = '#fff';
+                    ctx.textAlign = 'center';
+                    ctx.fillText(`${dur.toFixed(1)}s`, (x1 + x2) / 2, barY + barH / 2 + 3);
+                    ctx.textAlign = 'start';
+                }
+            });
+
+            // Silence markers (only enabled ones)
+            d.silence_regions.forEach((r, i) => {
+                const x1 = (r[0] / d.duration) * w;
+                const x2 = (r[1] / d.duration) * w;
+                if (silenceEnabled[i]) {
+                    ctx.fillStyle = 'rgba(239, 68, 68, 0.45)';
+                    ctx.fillRect(x1, barY, x2 - x1, barH);
+                } else {
+                    ctx.setLineDash([3, 3]);
+                    ctx.strokeStyle = 'rgba(239, 68, 68, 0.3)';
+                    ctx.lineWidth = 1;
+                    ctx.strokeRect(x1, barY, x2 - x1, barH);
+                    ctx.setLineDash([]);
+                }
+            });
+
+            drawTimeAxis(ctx, w, h, d.duration, 46);
+        }
+
+        function drawTimeAxis(ctx, w, h, duration, yPos) {
+            const y = yPos || h - 10;
+            ctx.font = '9px Inter, sans-serif';
+            ctx.fillStyle = '#64748b';
+            const numTicks = Math.min(10, Math.max(4, Math.floor(w / 80)));
+            for (let i = 0; i <= numTicks; i++) {
+                const x = (i / numTicks) * w;
+                const t = (i / numTicks) * duration;
+                ctx.fillText(fmtTime(t), Math.max(2, x - 14), y);
+            }
+        }
+
+        // ── Tooltip on hover + click to toggle silence ──
+        function setupTooltip(d) {
+            const tip = $('tooltip');
+            const canvases = [$('cv-waveform'), $('cv-gain'), $('cv-segments')];
+
+            // Helper: find which silence region index the time falls in (-1 if none)
+            function findSilenceAt(t) {
+                for (let i = 0; i < d.silence_regions.length; i++) {
+                    const r = d.silence_regions[i];
+                    if (t >= r[0] && t <= r[1]) return i;
+                }
+                return -1;
+            }
+
+            canvases.forEach(cv => {
+                cv.addEventListener('mousemove', e => {
+                    const rect = cv.getBoundingClientRect();
+                    const xRatio = (e.clientX - rect.left) / rect.width;
+                    const t = xRatio * d.duration;
+
+                    const silenceIdx = findSilenceAt(t);
+
+                    // Find closest gain data
+                    let gainInfo = '';
+                    if (d.gain_data && d.gain_data.length) {
+                        const closest = d.gain_data.reduce((a, b) =>
+                            Math.abs(a.time - t) < Math.abs(b.time - t) ? a : b);
+                        gainInfo = ` │ RMS: ${closest.rms_db.toFixed(1)} dB`;
+                    }
+
+                    // Build tooltip content
+                    let content = `⏱ ${fmtTime(t)}${gainInfo}`;
+                    if (silenceIdx >= 0) {
+                        const enabled = silenceEnabled[silenceIdx];
+                        const sr = d.silence_regions[silenceIdx];
+                        const hintClass = enabled ? 'cut' : 'keep';
+                        const hintText = enabled ? '✘ 剪除' : '✔ 保留';
+                        content += ` │ <span style="color:#ef4444;">气口 #${silenceIdx + 1}</span>`;
+                        content += ` <span class="silence-hint ${hintClass}">${hintText}</span>`;
+                        content += `<br><span style="font-size:10px;color:var(--text-muted);">点击切换 │ ${fmtTime(sr[0])} ~ ${fmtTime(sr[1])}</span>`;
+                        cv.style.cursor = 'pointer';
+                    } else {
+                        cv.style.cursor = 'crosshair';
+                    }
+
+                    tip.style.display = 'block';
+                    tip.style.left = (e.clientX + 16) + 'px';
+                    tip.style.top = (e.clientY - 10) + 'px';
+                    tip.innerHTML = content;
+                });
+                cv.addEventListener('mouseleave', () => {
+                    tip.style.display = 'none';
+                    cv.style.cursor = 'crosshair';
+                });
+
+                // Click: toggle silence if on a silence region, otherwise seek
+                cv.addEventListener('click', e => {
+                    const rect = cv.getBoundingClientRect();
+                    const xRatio = (e.clientX - rect.left) / rect.width;
+                    const t = xRatio * d.duration;
+
+                    const silenceIdx = findSilenceAt(t);
+                    if (silenceIdx >= 0) {
+                        // Toggle this silence region
+                        toggleSilence(silenceIdx);
+                    } else {
+                        // Seek
+                        if (mediaEl) mediaEl.currentTime = t;
+                    }
+                });
+            });
+        }
+
+        // ── Player (Cut playback - skips silence) ──
+        function setupPlayer(d) {
+            if (!uploadedFile) return;
+
+            // Determine audio or video
+            const isAudio = d.is_audio;
+            const mediaUrl = `/api/media/${uploadedFile.save_name}`;
+
+            if (isAudio) {
+                $('player-video-area').style.display = 'none';
+                const audio = $('player-audio');
+                audio.src = mediaUrl;
+                mediaEl = audio;
+            } else {
+                $('player-video-area').style.display = 'block';
+                const video = $('player-video');
+                video.src = mediaUrl;
+                mediaEl = video;
+            }
+
+            const seekbar = $('player-seekbar');
+            const curEl = $('player-cur');
+            const durEl = $('player-dur');
+            const playBtn = $('player-play-btn');
+
+            // Cut duration for seekbar (recalculate from effective segments)
+            const cutDur = effectiveSegments.reduce((sum, s) => sum + (s[1] - s[0]), 0);
+
+            // Reset
+            seekbar.value = 0;
+            seekbar.max = cutDur;
+            curEl.textContent = '00:00.00';
+            durEl.textContent = fmtTime(cutDur);
+            playBtn.textContent = '▶';
+            isPlayingCut = false;
+
+            mediaEl.addEventListener('loadedmetadata', () => {
+                // Duration label shows cut duration, not original
+                durEl.textContent = fmtTime(cutDur);
+            });
+
+            // Seekbar input - map cut-time to original-time
+            seekbar.addEventListener('input', () => {
+                const cutTime = parseFloat(seekbar.value);
+                const origTime = cutTimeToOriginal(cutTime, effectiveSegments);
+                mediaEl.currentTime = origTime;
+            });
+
+            // Start playhead animation loop
+            if (playheadRAF) cancelAnimationFrame(playheadRAF);
+            const playheads = [$('ph-waveform'), $('ph-gain'), $('ph-segments')];
+            playheads.forEach(ph => ph.style.display = 'none');
+
+            function updatePlayhead() {
+                if (mediaEl && d) {
+                    const origTime = mediaEl.currentTime;
+                    const ratio = origTime / d.duration;
+
+                    // Calculate cut-time for seekbar
+                    const cutTime = originalToCutTime(origTime, effectiveSegments);
+                    seekbar.value = cutTime;
+                    curEl.textContent = fmtTime(cutTime);
+
+                    // Show / position playheads on ORIGINAL timeline
+                    playheads.forEach(ph => {
+                        ph.style.display = 'block';
+                        ph.style.left = (ratio * 100) + '%';
+                    });
+
+                    // Update play button
+                    playBtn.textContent = mediaEl.paused ? '▶' : '⏸';
+
+                    // Auto-skip silence regions during playback (only enabled ones)
+                    if (!mediaEl.paused && isPlayingCut) {
+                        for (let si = 0; si < d.silence_regions.length; si++) {
+                            if (!silenceEnabled[si]) continue;
+                            const sr = d.silence_regions[si];
+                            if (origTime >= sr[0] && origTime < sr[1]) {
+                                mediaEl.currentTime = sr[1];
+                                break;
+                            }
+                        }
+                    }
+                }
+                playheadRAF = requestAnimationFrame(updatePlayhead);
+            }
+            updatePlayhead();
+        }
+
+        // Map cut-time (0..cutDuration) to original-time
+        function cutTimeToOriginal(cutTime, segments) {
+            let elapsed = 0;
+            for (const seg of segments) {
+                const segDur = seg[1] - seg[0];
+                if (elapsed + segDur > cutTime) {
+                    return seg[0] + (cutTime - elapsed);
+                }
+                elapsed += segDur;
+            }
+            // Past end, return last segment end
+            return segments.length ? segments[segments.length - 1][1] : 0;
+        }
+
+        // Map original-time to cut-time
+        function originalToCutTime(origTime, segments) {
+            let cutTime = 0;
+            for (const seg of segments) {
+                if (origTime < seg[0]) break;
+                if (origTime <= seg[1]) {
+                    cutTime += origTime - seg[0];
+                    break;
+                }
+                cutTime += seg[1] - seg[0];
+            }
+            return cutTime;
+        }
+
+        function togglePlay() {
+            if (!mediaEl || !analysisData) return;
+            if (mediaEl.paused) {
+                isPlayingCut = true;
+                // If at enabled silence region, jump to next segment
+                const t = mediaEl.currentTime;
+                for (let si = 0; si < analysisData.silence_regions.length; si++) {
+                    if (!silenceEnabled[si]) continue;
+                    const sr = analysisData.silence_regions[si];
+                    if (t >= sr[0] && t < sr[1]) {
+                        mediaEl.currentTime = sr[1];
+                        break;
+                    }
+                }
+                mediaEl.play();
+            } else {
+                mediaEl.pause();
+                isPlayingCut = false;
+            }
+        }
+
+        // ── Export ──
+        async function exportVideo() {
+            if (!uploadedFile || !analysisData) return;
+            const btn = $('btn-export');
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner"></span> 准备导出...';
+            $('export-progress').style.display = 'block';
+            $('export-bar').style.width = '20%';
+            $('export-status').textContent = '正在导出，请稍候...';
+            $('download-area').style.display = 'none';
+
+            const fd = new FormData();
+            fd.append('save_name', uploadedFile.save_name);
+            fd.append('segments', JSON.stringify(effectiveSegments));
+            if (analysisData.video_fps) fd.append('video_fps', analysisData.video_fps);
+
+            try {
+                const res = await fetch('/api/export', { method: 'POST', body: fd });
+                if (!res.ok) { const e = await res.json(); throw new Error(e.detail); }
+                const { task_id } = await res.json();
+
+                // Poll status
+                $('export-bar').style.width = '50%';
+                const poll = setInterval(async () => {
+                    const sr = await fetch(`/api/task/${task_id}`);
+                    const st = await sr.json();
+                    if (st.status === 'done') {
+                        clearInterval(poll);
+                        $('export-bar').style.width = '100%';
+                        const isAudio = analysisData.is_audio;
+                        $('export-status').textContent = '✅ 导出完成！';
+                        $('download-area').style.display = 'block';
+                        const link = $('download-link');
+                        link.href = `/api/download/${st.output}`;
+                        link.textContent = isAudio ? '⬇️ 下载剪辑后音频' : '⬇️ 下载剪辑后视频';
+                        link.download = st.output;
+                        btn.disabled = false;
+                        btn.innerHTML = '📦 导出剪辑视频';
+                    } else if (st.status === 'error') {
+                        clearInterval(poll);
+                        throw new Error(st.error);
+                    }
+                }, 1500);
+            } catch (err) {
+                $('export-status').textContent = '❌ 导出失败: ' + err.message;
+                btn.disabled = false;
+                btn.innerHTML = '📦 导出剪辑视频';
+            }
+        }
+
+        // ── Helpers ──
+        function fmtTime(s) {
+            const m = Math.floor(s / 60);
+            const sec = s - m * 60;
+            return `${String(m).padStart(2, '0')}:${sec.toFixed(2).padStart(5, '0')}`;
+        }
+
+        // ── Resize handler ──
+        let resizeTimer;
+        window.addEventListener('resize', () => {
+            clearTimeout(resizeTimer);
+            resizeTimer = setTimeout(() => { if (analysisData) renderTimeline(); }, 200);
+        });
+    </script>
+</body>
+
+</html>
