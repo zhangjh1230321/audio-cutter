@@ -48,71 +48,128 @@ def is_audio_file(path: str) -> bool:
     return Path(path).suffix.lower() in AUDIO_EXTS
 
 
-def compute_audio_data(file_path: str, threshold: float = -35,
-                       min_gap: float = 0.1, merge_gap: float = 0.3,
-                       padding: float = 0.08):
-    """分析音频/视频文件，返回完整分析数据"""
+def compute_audio_data(file_path: str, threshold: float = -40,
+                       min_gap: float = 0.3, merge_gap: float = 0.35,
+                       padding: float = 0.15):
+    """分析音频/视频文件，返回完整分析数据（低内存流式处理）"""
     import numpy as np
-    from moviepy import VideoFileClip, AudioFileClip
+    import subprocess
+    import wave
+    import tempfile
+    import struct
 
     audio_only = is_audio_file(file_path)
-    if audio_only:
-        clip = AudioFileClip(file_path)
-        audio_obj = clip
-        duration = clip.duration
-        video_fps = None
-    else:
-        clip = VideoFileClip(file_path)
-        audio_obj = clip.audio
-        duration = clip.duration
-        video_fps = clip.fps
+    video_fps = None
 
-    if audio_obj is None:
-        clip.close()
-        raise ValueError("文件没有音频轨道")
+    # 使用 ffmpeg 提取音频为 WAV（避免加载视频到内存）
+    with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as tmp:
+        tmp_wav = tmp.name
 
-    audio_array = np.array(list(audio_obj.iter_frames()))
-    sample_rate = audio_obj.fps
+    try:
+        # 用 ffmpeg 提取音频，16kHz 单声道以节省内存
+        cmd = [
+            'ffmpeg', '-y', '-i', file_path,
+            '-vn',           # 不要视频
+            '-ac', '1',      # 单声道
+            '-ar', '16000',  # 16kHz 采样率
+            '-sample_fmt', 's16',
+            '-f', 'wav',
+            tmp_wav
+        ]
+        proc = subprocess.run(cmd, capture_output=True, timeout=120)
 
-    # ── 检测静音 ──
-    chunk_duration = 0.1
-    chunk_samples = int(chunk_duration * sample_rate)
+        # 获取视频信息（时长、fps）
+        probe_cmd = [
+            'ffmpeg', '-i', file_path,
+            '-f', 'null', '-'
+        ]
+        probe = subprocess.run(probe_cmd, capture_output=True, text=True, timeout=30)
+        probe_output = probe.stderr
 
-    silence_regions = []
-    gain_data = []
-    in_silence = False
-    silence_start = 0
+        # 提取视频 fps
+        if not audio_only:
+            import re
+            fps_match = re.search(r'(\d+(?:\.\d+)?)\s*fps', probe_output)
+            if fps_match:
+                video_fps = float(fps_match.group(1))
 
-    for i in range(0, len(audio_array), chunk_samples):
-        chunk = audio_array[i:i + chunk_samples]
-        if len(chunk) == 0:
-            continue
+        # 读取 WAV 文件并流式分析
+        with wave.open(tmp_wav, 'rb') as wf:
+            sample_rate = wf.getframerate()
+            n_channels = wf.getnchannels()
+            n_frames = wf.getnframes()
+            sampwidth = wf.getsampwidth()
+            duration = n_frames / sample_rate
 
-        t = round(i / sample_rate, 3)
-        rms = float(np.sqrt(np.mean(chunk ** 2)))
-        peak = float(np.max(np.abs(chunk)))
+            # 每 0.1 秒一个分析块
+            chunk_duration = 0.1
+            chunk_frames = int(chunk_duration * sample_rate)
 
-        rms_db = round(20 * np.log10(rms + 1e-10), 2)
-        peak_db = round(20 * np.log10(peak + 1e-10), 2)
+            silence_regions = []
+            gain_data = []
+            waveform_peaks = []  # 用于波形显示的峰值
+            in_silence = False
+            silence_start = 0
+            frame_idx = 0
 
-        gain_data.append({"time": t, "rms_db": rms_db, "peak_db": peak_db})
+            while True:
+                raw = wf.readframes(chunk_frames)
+                if not raw:
+                    break
 
-        if rms_db < threshold:
-            if not in_silence:
-                in_silence = True
-                silence_start = t
-        else:
-            if in_silence:
-                dur = t - silence_start
-                if dur >= min_gap:
-                    silence_regions.append([silence_start, t])
-                in_silence = False
+                # 转换为 numpy（16-bit PCM）
+                n_samples = len(raw) // (sampwidth * n_channels)
+                if n_samples == 0:
+                    break
 
-    if in_silence:
-        end_t = round(len(audio_array) / sample_rate, 3)
-        dur = end_t - silence_start
-        if dur >= min_gap:
-            silence_regions.append([silence_start, end_t])
+                if sampwidth == 2:
+                    samples = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
+                elif sampwidth == 4:
+                    samples = np.frombuffer(raw, dtype=np.int32).astype(np.float32) / 2147483648.0
+                else:
+                    samples = np.frombuffer(raw, dtype=np.uint8).astype(np.float32) / 128.0 - 1.0
+
+                if n_channels > 1:
+                    samples = samples.reshape(-1, n_channels).mean(axis=1)
+
+                t = round(frame_idx / sample_rate, 3)
+                rms = float(np.sqrt(np.mean(samples ** 2)))
+                peak = float(np.max(np.abs(samples)))
+
+                rms_db = round(20 * np.log10(rms + 1e-10), 2)
+                peak_db = round(20 * np.log10(peak + 1e-10), 2)
+
+                gain_data.append({"time": t, "rms_db": rms_db, "peak_db": peak_db})
+
+                # 波形峰值（用于前端显示）
+                waveform_peaks.append(float(np.max(samples)))
+
+                if rms_db < threshold:
+                    if not in_silence:
+                        in_silence = True
+                        silence_start = t
+                else:
+                    if in_silence:
+                        dur = t - silence_start
+                        if dur >= min_gap:
+                            silence_regions.append([silence_start, t])
+                        in_silence = False
+
+                frame_idx += n_samples
+
+        # 处理结尾静音
+        if in_silence:
+            end_t = round(frame_idx / sample_rate, 3)
+            dur = end_t - silence_start
+            if dur >= min_gap:
+                silence_regions.append([silence_start, end_t])
+
+    finally:
+        # 清理临时文件
+        try:
+            os.unlink(tmp_wav)
+        except:
+            pass
 
     # 合并相近气口
     merged = []
@@ -122,16 +179,15 @@ def compute_audio_data(file_path: str, threshold: float = -35,
         else:
             merged.append([start, end])
 
-    # ── 应用边界保留（padding）──
-    # 在每个静音区域两端保留 padding 秒的缓冲，让过渡更自然
+    # 应用边界保留（padding）
     padded = []
     for start, end in merged:
         ps = start + padding
         pe = end - padding
-        if pe > ps:  # 只有缩减后仍有剩余才算有效静音
+        if pe > ps:
             padded.append([round(ps, 3), round(pe, 3)])
 
-    # ── 计算保留片段 ──
+    # 计算保留片段
     segments = []
     prev_end = 0.0
     for start, end in padded:
@@ -141,11 +197,10 @@ def compute_audio_data(file_path: str, threshold: float = -35,
     if duration - prev_end > 0.05:
         segments.append([round(prev_end, 3), round(duration, 3)])
 
-    # ── 波形数据（降采样） ──
-    mono = audio_array[:, 0] if audio_array.ndim > 1 else audio_array
-    ds = max(1, len(mono) // 2000)
-    waveform_samples = mono[::ds].tolist()
-    waveform_times = (np.arange(len(mono))[::ds] / sample_rate).tolist()
+    # 波形数据（从峰值列表降采样）
+    ds = max(1, len(waveform_peaks) // 2000)
+    wf_samples = waveform_peaks[::ds]
+    wf_times = [round(i * chunk_duration, 3) for i in range(0, len(waveform_peaks), ds)]
 
     total_silence = sum(e - s for s, e in padded)
 
@@ -160,10 +215,9 @@ def compute_audio_data(file_path: str, threshold: float = -35,
         "cut_duration": round(duration - total_silence, 3),
         "segments": segments,
         "gain_data": gain_data,
-        "waveform": {"times": waveform_times, "samples": waveform_samples},
+        "waveform": {"times": wf_times, "samples": wf_samples},
     }
 
-    clip.close()
     return result
 
 
@@ -240,10 +294,10 @@ async def upload_file(file: UploadFile = File(...)):
 @app.post("/api/analyze")
 async def analyze_file(
     save_name: str = Form(...),
-    threshold: float = Form(-35),
-    min_gap: float = Form(0.1),
-    merge_gap: float = Form(0.3),
-    padding: float = Form(0.08),
+    threshold: float = Form(-40),
+    min_gap: float = Form(0.3),
+    merge_gap: float = Form(0.35),
+    padding: float = Form(0.15),
     background_tasks: BackgroundTasks = None,
 ):
     """分析音频/视频气口（后台任务模式，避免超时）"""
