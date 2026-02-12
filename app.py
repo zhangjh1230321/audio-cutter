@@ -48,9 +48,9 @@ def is_audio_file(path: str) -> bool:
     return Path(path).suffix.lower() in AUDIO_EXTS
 
 
-def compute_audio_data(file_path: str, threshold: float = -40,
-                       min_gap: float = 0.3, merge_gap: float = 0.35,
-                       padding: float = 0.15):
+def compute_audio_data(file_path: str, threshold: float = -35,
+                       min_gap: float = 0.1, merge_gap: float = 0.3,
+                       padding: float = 0.08):
     """分析音频/视频文件，返回完整分析数据（低内存流式处理）"""
     import numpy as np
     import subprocess
@@ -294,10 +294,10 @@ async def upload_file(file: UploadFile = File(...)):
 @app.post("/api/analyze")
 async def analyze_file(
     save_name: str = Form(...),
-    threshold: float = Form(-40),
-    min_gap: float = Form(0.3),
-    merge_gap: float = Form(0.35),
-    padding: float = Form(0.15),
+    threshold: float = Form(-35),
+    min_gap: float = Form(0.1),
+    merge_gap: float = Form(0.3),
+    padding: float = Form(0.08),
     background_tasks: BackgroundTasks = None,
 ):
     """分析音频/视频气口（后台任务模式，避免超时）"""
