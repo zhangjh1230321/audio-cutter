@@ -485,6 +485,8 @@
             display: block;
             width: 100%;
             cursor: crosshair;
+            touch-action: pan-y;
+            -webkit-tap-highlight-color: transparent;
         }
 
         .timeline-label {
@@ -570,8 +572,10 @@
             cursor: pointer;
             user-select: none;
             transition: var(--transition);
-            padding: 4px 12px;
-            font-size: 11px;
+            padding: 8px 16px;
+            font-size: 12px;
+            touch-action: manipulation;
+            -webkit-tap-highlight-color: transparent;
         }
 
         .badge-toggle:hover {
@@ -604,14 +608,16 @@
         }
 
         .bulk-toggle-bar .btn-sm {
-            padding: 4px 12px;
-            font-size: 11px;
+            padding: 8px 16px;
+            font-size: 12px;
             border-radius: 6px;
             border: 1px solid var(--border-glass);
             background: var(--bg-glass);
             color: var(--text-secondary);
             cursor: pointer;
             transition: var(--transition);
+            touch-action: manipulation;
+            -webkit-tap-highlight-color: transparent;
         }
 
         .bulk-toggle-bar .btn-sm:hover {
@@ -1550,6 +1556,18 @@
                 return -1;
             }
 
+            // Helper to get X position from mouse or touch event
+            function getClientX(e) {
+                if (e.touches && e.touches.length) return e.touches[0].clientX;
+                if (e.changedTouches && e.changedTouches.length) return e.changedTouches[0].clientX;
+                return e.clientX;
+            }
+            function getClientY(e) {
+                if (e.touches && e.touches.length) return e.touches[0].clientY;
+                if (e.changedTouches && e.changedTouches.length) return e.changedTouches[0].clientY;
+                return e.clientY;
+            }
+
             canvases.forEach(cv => {
                 cv.addEventListener('mousemove', e => {
                     const rect = cv.getBoundingClientRect();
@@ -1599,10 +1617,37 @@
 
                     const silenceIdx = findSilenceAt(t);
                     if (silenceIdx >= 0) {
-                        // Toggle this silence region
                         toggleSilence(silenceIdx);
                     } else {
-                        // Seek
+                        if (mediaEl) mediaEl.currentTime = t;
+                    }
+                });
+
+                // Touch support: tap to toggle silence on touch devices
+                let touchStartX = 0;
+                let touchStartY = 0;
+                cv.addEventListener('touchstart', e => {
+                    touchStartX = getClientX(e);
+                    touchStartY = getClientY(e);
+                }, { passive: true });
+
+                cv.addEventListener('touchend', e => {
+                    const endX = getClientX(e);
+                    const endY = getClientY(e);
+                    // Only trigger if it was a tap (not a swipe)
+                    const dx = Math.abs(endX - touchStartX);
+                    const dy = Math.abs(endY - touchStartY);
+                    if (dx > 15 || dy > 15) return; // swipe, ignore
+
+                    e.preventDefault(); // prevent ghost click
+                    const rect = cv.getBoundingClientRect();
+                    const xRatio = (endX - rect.left) / rect.width;
+                    const t = xRatio * d.duration;
+
+                    const silenceIdx = findSilenceAt(t);
+                    if (silenceIdx >= 0) {
+                        toggleSilence(silenceIdx);
+                    } else {
                         if (mediaEl) mediaEl.currentTime = t;
                     }
                 });
