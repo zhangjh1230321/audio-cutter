@@ -1149,7 +1149,7 @@
             if (!uploadedFile) return;
             const btn = $('btn-analyze');
             btn.disabled = true;
-            btn.innerHTML = '<span class="spinner"></span> 分析中...';
+            btn.innerHTML = '<span class="spinner"></span> 提交分析任务...';
 
             const fd = new FormData();
             fd.append('save_name', uploadedFile.save_name);
@@ -1160,8 +1160,32 @@
 
             try {
                 const res = await fetch('/api/analyze', { method: 'POST', body: fd });
-                if (!res.ok) { const e = await res.json(); throw new Error(e.detail || '分析失败'); }
-                analysisData = await res.json();
+                if (!res.ok) { const e = await res.json(); throw new Error(e.detail || '提交失败'); }
+                const { task_id } = await res.json();
+
+                btn.innerHTML = '<span class="spinner"></span> 分析中，请稍候...';
+
+                // Poll for result
+                const result = await new Promise((resolve, reject) => {
+                    const poll = setInterval(async () => {
+                        try {
+                            const sr = await fetch(`/api/task/${task_id}`);
+                            const st = await sr.json();
+                            if (st.status === 'done') {
+                                clearInterval(poll);
+                                resolve(st.result);
+                            } else if (st.status === 'error') {
+                                clearInterval(poll);
+                                reject(new Error(st.error || '分析失败'));
+                            }
+                            // still processing, continue polling
+                        } catch (pollErr) {
+                            // Network error during poll, keep trying
+                        }
+                    }, 2000);
+                });
+
+                analysisData = result;
 
                 // Initialize silence toggles (all enabled = all will be cut)
                 timelineInitialized = false;

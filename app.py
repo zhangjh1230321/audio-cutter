@@ -244,21 +244,34 @@ async def analyze_file(
     min_gap: float = Form(0.1),
     merge_gap: float = Form(0.3),
     padding: float = Form(0.08),
+    background_tasks: BackgroundTasks = None,
 ):
-    """分析音频/视频气口"""
+    """分析音频/视频气口（后台任务模式，避免超时）"""
     video_path = UPLOAD_DIR / save_name
     if not video_path.exists():
         raise HTTPException(404, "视频文件不存在")
 
-    try:
-        result = await asyncio.get_event_loop().run_in_executor(
-            None, compute_audio_data, str(video_path), threshold, min_gap, merge_gap, padding
-        )
-        return result
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        raise HTTPException(500, f"分析失败: {str(e)}")
+    task_id = str(uuid.uuid4())[:8]
+    tasks[task_id] = {"status": "processing", "progress": 0, "output": None}
+
+    def do_analyze():
+        try:
+            result = compute_audio_data(
+                str(video_path), threshold, min_gap, merge_gap, padding
+            )
+            tasks[task_id] = {
+                "status": "done",
+                "progress": 100,
+                "result": result,
+            }
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            tasks[task_id] = {"status": "error", "progress": 0, "error": str(e)}
+
+    background_tasks.add_task(do_analyze)
+
+    return {"task_id": task_id, "message": "分析任务已开始"}
 
 
 @app.post("/api/export")
