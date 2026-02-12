@@ -56,7 +56,13 @@ def compute_audio_data(file_path: str, threshold: float = -35,
     import subprocess
     import wave
     import tempfile
-    import struct
+
+    # 获取 ffmpeg 路径（优先使用 imageio_ffmpeg 内置的）
+    try:
+        import imageio_ffmpeg
+        ffmpeg_path = imageio_ffmpeg.get_ffmpeg_exe()
+    except Exception:
+        ffmpeg_path = 'ffmpeg'
 
     audio_only = is_audio_file(file_path)
     video_fps = None
@@ -68,7 +74,7 @@ def compute_audio_data(file_path: str, threshold: float = -35,
     try:
         # 用 ffmpeg 提取音频，16kHz 单声道以节省内存
         cmd = [
-            'ffmpeg', '-y', '-i', file_path,
+            ffmpeg_path, '-y', '-i', file_path,
             '-vn',           # 不要视频
             '-ac', '1',      # 单声道
             '-ar', '16000',  # 16kHz 采样率
@@ -77,10 +83,12 @@ def compute_audio_data(file_path: str, threshold: float = -35,
             tmp_wav
         ]
         proc = subprocess.run(cmd, capture_output=True, timeout=120)
+        if proc.returncode != 0:
+            raise RuntimeError(f"ffmpeg 提取音频失败: {proc.stderr.decode('utf-8', errors='replace')[:500]}")
 
         # 获取视频信息（时长、fps）
         probe_cmd = [
-            'ffmpeg', '-i', file_path,
+            ffmpeg_path, '-i', file_path,
             '-f', 'null', '-'
         ]
         probe = subprocess.run(probe_cmd, capture_output=True, text=True, timeout=30)
