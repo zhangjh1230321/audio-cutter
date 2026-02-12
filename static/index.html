@@ -1026,7 +1026,7 @@
             <div class="card" style="text-align:center;">
                 <div class="btn-group" style="margin-top:0;">
                     <button class="btn btn-outline" onclick="showSection('sec-settings')">⚙️ 调整参数</button>
-                    <button class="btn btn-primary" onclick="reAnalyze()">🔄 重新分析</button>
+                    <button class="btn btn-primary" onclick="resetUpload()">📂 处理新文件</button>
                     <button class="btn btn-success" id="btn-export" onclick="exportVideo()">
                         📦 导出剪辑视频
                     </button>
@@ -1131,12 +1131,6 @@
             }
         }
 
-        // ── Re-analyze with current parameters ──
-        function reAnalyze() {
-            showSection('sec-settings');
-            // Small delay to show the settings section, then auto-trigger analysis
-            setTimeout(() => analyzeVideo(), 200);
-        }
 
         function resetUpload() {
             uploadedFile = null;
