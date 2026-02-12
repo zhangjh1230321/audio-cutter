@@ -113,11 +113,8 @@ def compute_audio_data(file_path: str, threshold: float = -35,
             chunk_duration = 0.1
             chunk_frames = int(chunk_duration * sample_rate)
 
-            silence_regions = []
-            gain_data = []
-            waveform_peaks = []  # 用于波形显示的峰值
-            in_silence = False
-            silence_start = 0
+            # 第一遍：收集所有块的 RMS 数据
+            all_chunks = []  # [(time, rms_db, peak_db, waveform_peak)]
             frame_idx = 0
 
             while True:
@@ -125,7 +122,6 @@ def compute_audio_data(file_path: str, threshold: float = -35,
                 if not raw:
                     break
 
-                # 转换为 numpy（16-bit PCM）
                 n_samples = len(raw) // (sampwidth * n_channels)
                 if n_samples == 0:
                     break
@@ -146,31 +142,74 @@ def compute_audio_data(file_path: str, threshold: float = -35,
 
                 rms_db = round(20 * np.log10(rms + 1e-10), 2)
                 peak_db = round(20 * np.log10(peak + 1e-10), 2)
+                wf_peak = float(np.max(samples))
 
-                gain_data.append({"time": t, "rms_db": rms_db, "peak_db": peak_db})
-
-                # 波形峰值（用于前端显示）
-                waveform_peaks.append(float(np.max(samples)))
-
-                if rms_db < threshold:
-                    if not in_silence:
-                        in_silence = True
-                        silence_start = t
-                else:
-                    if in_silence:
-                        dur = t - silence_start
-                        if dur >= min_gap:
-                            silence_regions.append([silence_start, t])
-                        in_silence = False
-
+                all_chunks.append((t, rms_db, peak_db, wf_peak))
                 frame_idx += n_samples
 
+        # ── 智能参数检测（当 threshold == 0 时启用）──
+        auto_detected = False
+        if threshold == 0 and len(all_chunks) > 10:
+            auto_detected = True
+            rms_values = sorted([c[1] for c in all_chunks])
+
+            # 找到噪底（第 15 百分位）和说话音量（第 70 百分位）
+            noise_floor = rms_values[int(len(rms_values) * 0.15)]
+            speech_level = rms_values[int(len(rms_values) * 0.70)]
+
+            # 阈值设在噪底和说话之间，偏向噪底（安全侧）
+            gap = speech_level - noise_floor
+            if gap > 5:
+                # 音量差异明显，阈值设在中间偏下
+                threshold = noise_floor + gap * 0.35
+            else:
+                # 音量差异小，用更保守的阈值
+                threshold = noise_floor + 3
+
+            threshold = round(max(threshold, -55), 1)  # 不低于 -55dB
+
+            # 根据说话密度自动调整 min_gap 和 padding
+            speech_ratio = sum(1 for c in all_chunks if c[1] >= threshold) / len(all_chunks)
+            if speech_ratio > 0.7:
+                # 说话密集（如播客），缩短最小气口，保留更多缓冲
+                min_gap = max(min_gap, 0.15)
+                padding = max(padding, 0.12)
+            elif speech_ratio < 0.3:
+                # 说话稀疏（如有大段静音），放宽标准
+                min_gap = max(min_gap, 0.5)
+                padding = max(padding, 0.15)
+            else:
+                min_gap = max(min_gap, 0.2)
+                padding = max(padding, 0.1)
+
+        # ── 用确定的阈值检测静音 ──
+        gain_data = []
+        waveform_peaks = []
+        silence_regions = []
+        in_silence = False
+        silence_start = 0
+
+        for t, rms_db, peak_db, wf_peak in all_chunks:
+            gain_data.append({"time": t, "rms_db": rms_db, "peak_db": peak_db})
+            waveform_peaks.append(wf_peak)
+
+            if rms_db < threshold:
+                if not in_silence:
+                    in_silence = True
+                    silence_start = t
+            else:
+                if in_silence:
+                    dur = t - silence_start
+                    if dur >= min_gap:
+                        silence_regions.append([silence_start, t])
+                    in_silence = False
+
         # 处理结尾静音
-        if in_silence:
-            end_t = round(frame_idx / sample_rate, 3)
+        if in_silence and all_chunks:
+            end_t = all_chunks[-1][0] + chunk_duration
             dur = end_t - silence_start
             if dur >= min_gap:
-                silence_regions.append([silence_start, end_t])
+                silence_regions.append([silence_start, round(end_t, 3)])
 
     finally:
         # 清理临时文件
@@ -224,6 +263,13 @@ def compute_audio_data(file_path: str, threshold: float = -35,
         "segments": segments,
         "gain_data": gain_data,
         "waveform": {"times": wf_times, "samples": wf_samples},
+        "auto_detected": auto_detected,
+        "used_params": {
+            "threshold": round(threshold, 1),
+            "min_gap": round(min_gap, 2),
+            "merge_gap": round(merge_gap, 2),
+            "padding": round(padding, 2),
+        },
     }
 
     return result

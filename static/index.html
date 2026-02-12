@@ -942,9 +942,15 @@
                 </div>
                 <div class="btn-group">
                     <button class="btn btn-outline" onclick="resetUpload()">↩ 重新上传</button>
-                    <button class="btn btn-primary" id="btn-analyze" onclick="analyzeVideo()">
-                        🔍 开始智能分析
+                    <button class="btn btn-primary" id="btn-analyze" onclick="analyzeVideo(false)">
+                        🔍 手动分析
                     </button>
+                    <button class="btn btn-success" id="btn-smart" onclick="analyzeVideo(true)">
+                        🧠 智能检测
+                    </button>
+                </div>
+                <div id="auto-params-info"
+                    style="display:none; margin-top:12px; padding:10px 16px; border-radius:8px; background:rgba(99,102,241,0.15); border:1px solid rgba(99,102,241,0.3); font-size:12px; color:var(--text-secondary);">
                 </div>
             </div>
         </section>
@@ -1147,18 +1153,29 @@
         }
 
         // ── Analyze ──
-        async function analyzeVideo() {
+        async function analyzeVideo(smartMode = false) {
             if (!uploadedFile) return;
-            const btn = $('btn-analyze');
+            const btn = smartMode ? $('btn-smart') : $('btn-analyze');
+            const otherBtn = smartMode ? $('btn-analyze') : $('btn-smart');
             btn.disabled = true;
-            btn.innerHTML = '<span class="spinner"></span> 提交分析任务...';
+            otherBtn.disabled = true;
+            btn.innerHTML = '<span class="spinner"></span> ' + (smartMode ? '智能检测中...' : '分析中...');
 
             const fd = new FormData();
             fd.append('save_name', uploadedFile.save_name);
-            fd.append('threshold', $('ctrl-threshold').value);
-            fd.append('min_gap', $('ctrl-mingap').value);
-            fd.append('merge_gap', $('ctrl-merge').value);
-            fd.append('padding', $('ctrl-padding').value);
+
+            if (smartMode) {
+                // threshold=0 触发后端智能检测
+                fd.append('threshold', '0');
+                fd.append('min_gap', '0');
+                fd.append('merge_gap', '0');
+                fd.append('padding', '0');
+            } else {
+                fd.append('threshold', $('ctrl-threshold').value);
+                fd.append('min_gap', $('ctrl-mingap').value);
+                fd.append('merge_gap', $('ctrl-merge').value);
+                fd.append('padding', $('ctrl-padding').value);
+            }
 
             try {
                 const res = await fetch('/api/analyze', { method: 'POST', body: fd });
@@ -1180,7 +1197,6 @@
                                 clearInterval(poll);
                                 reject(new Error(st.error || '分析失败'));
                             }
-                            // still processing, continue polling
                         } catch (pollErr) {
                             // Network error during poll, keep trying
                         }
@@ -1189,13 +1205,31 @@
 
                 analysisData = result;
 
+                // 显示智能检测的参数
+                const infoEl = $('auto-params-info');
+                if (result.auto_detected && result.used_params) {
+                    const p = result.used_params;
+                    infoEl.innerHTML = `🧠 <b>智能检测结果:</b> 阈值 <b>${p.threshold} dB</b> │ 最小气口 <b>${p.min_gap}s</b> │ 合并间隔 <b>${p.merge_gap}s</b> │ 边界保留 <b>${p.padding}s</b>`;
+                    infoEl.style.display = 'block';
+                    // 同步更新滑块
+                    $('ctrl-threshold').value = p.threshold;
+                    $('val-threshold').textContent = p.threshold + ' dB';
+                    $('ctrl-mingap').value = p.min_gap;
+                    $('val-mingap').textContent = p.min_gap.toFixed(2) + ' 秒';
+                    $('ctrl-merge').value = p.merge_gap;
+                    $('val-merge').textContent = p.merge_gap.toFixed(2) + ' 秒';
+                    $('ctrl-padding').value = p.padding;
+                    $('val-padding').textContent = p.padding.toFixed(2) + ' 秒';
+                } else {
+                    infoEl.style.display = 'none';
+                }
+
                 // Initialize silence toggles (all enabled = all will be cut)
                 timelineInitialized = false;
                 silenceEnabled = analysisData.silence_regions.map(() => true);
                 recalculateFromToggles();
 
                 showSection('sec-preview');
-                // Delay rendering so the section is visible and has layout
                 await new Promise(r => setTimeout(r, 80));
                 renderStats();
                 renderTimeline();
@@ -1204,7 +1238,9 @@
                 alert('分析失败: ' + err.message);
             } finally {
                 btn.disabled = false;
-                btn.innerHTML = '🔍 开始智能分析';
+                otherBtn.disabled = false;
+                btn.innerHTML = smartMode ? '🧠 智能检测' : '🔍 手动分析';
+                otherBtn.innerHTML = smartMode ? '🔍 手动分析' : '🧠 智能检测';
             }
         }
 
